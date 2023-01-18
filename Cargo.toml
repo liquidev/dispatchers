@@ -1,0 +1,11 @@
+[package]
+name = "dispatchers"
+version = "0.1.0"
+edition = "2021"
+
+[[bench]]
+name = "benches"
+harness = false
+
+[dev-dependencies]
+criterion = "0.4.0"
