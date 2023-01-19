@@ -18,36 +18,50 @@ pub enum Instruction {
     },
 }
 
-struct State {
-    variables: [u32; 8],
+struct Frame {
+    variables: [u32; 256],
 }
 
-fn interpret(state: &mut State, code: &Instruction) -> u32 {
+impl Frame {
+    fn var(&self, i: u8) -> u32 {
+        debug_assert!((i as usize) < self.variables.len());
+        unsafe { *self.variables.get_unchecked(i as usize) }
+    }
+
+    fn set_var(&mut self, i: u8, val: u32) {
+        debug_assert!((i as usize) < self.variables.len());
+        unsafe {
+            *self.variables.get_unchecked_mut(i as usize) = val;
+        }
+    }
+}
+
+fn interpret(frame: &mut Frame, code: &Instruction) -> u32 {
     match code {
         Instruction::Int(i) => *i,
 
-        Instruction::Var(v) => state.variables[*v as usize],
+        Instruction::Var(v) => frame.var(*v),
         Instruction::Let { variable, value } => {
-            let value = interpret(state, value);
-            state.variables[*variable as usize] = value;
+            let value = interpret(frame, value);
+            frame.set_var(*variable, value);
             value
         }
 
-        Instruction::LessEq(a, b) => (interpret(state, a) <= interpret(state, b)) as u32,
-        Instruction::Add(a, b) => interpret(state, a) + interpret(state, b),
-        Instruction::Multiply(a, b) => interpret(state, a) * interpret(state, b),
+        Instruction::LessEq(a, b) => (interpret(frame, a) <= interpret(frame, b)) as u32,
+        Instruction::Add(a, b) => interpret(frame, a) + interpret(frame, b),
+        Instruction::Multiply(a, b) => interpret(frame, a) * interpret(frame, b),
 
         Instruction::Sequence(s) => {
             let mut last = 0;
             for insn in s {
-                last = interpret(state, insn);
+                last = interpret(frame, insn);
             }
             last
         }
         Instruction::While { condition, body } => {
             let mut last = 0;
-            while interpret(state, condition) != 0 {
-                last = interpret(state, body);
+            while interpret(frame, condition) != 0 {
+                last = interpret(frame, body);
             }
             last
         }
@@ -95,8 +109,10 @@ pub fn code() -> Instruction {
 }
 
 pub fn run(code: &Instruction) -> u32 {
-    let mut state = State { variables: [0; 8] };
-    state.variables[VAR_N as usize] = 10;
-    interpret(&mut state, &code);
-    state.variables[VAR_X as usize]
+    let mut frame = Frame {
+        variables: [0; 256],
+    };
+    frame.variables[VAR_N as usize] = 10;
+    interpret(&mut frame, &code);
+    frame.variables[VAR_X as usize]
 }

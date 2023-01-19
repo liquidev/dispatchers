@@ -24,36 +24,58 @@ struct Frame<'c> {
 
 impl<'c> Frame<'c> {
     fn read_u8(&mut self) -> u8 {
-        let x = self.bytecode[self.pc as usize];
+        debug_assert!((self.pc as usize) < self.bytecode.len());
+        let x = *unsafe { self.bytecode.get_unchecked(self.pc as usize) };
         self.pc += 1;
         x
     }
 
     fn read_u16(&mut self) -> u16 {
-        let x = unsafe { *std::mem::transmute::<_, &u16>(&self.bytecode[self.pc as usize]) };
+        debug_assert!((self.pc as usize + 1) < self.bytecode.len());
+        let x = unsafe {
+            *std::mem::transmute::<_, &u16>(self.bytecode.get_unchecked(self.pc as usize))
+        };
         self.pc += 2;
         u16::from_le(x)
     }
 
     fn read_u32(&mut self) -> u32 {
-        let x = unsafe { *std::mem::transmute::<_, &u32>(&self.bytecode[self.pc as usize]) };
+        debug_assert!((self.pc as usize + 3) < self.bytecode.len());
+        let x = unsafe {
+            *std::mem::transmute::<_, &u32>(self.bytecode.get_unchecked(self.pc as usize))
+        };
         self.pc += 4;
         u32::from_le(x)
     }
 
+    fn var(&self, i: u8) -> u32 {
+        debug_assert!((i as usize) < self.stack.len());
+        unsafe { *self.stack.get_unchecked(i as usize) }
+    }
+
+    fn set_var(&mut self, i: u8, val: u32) {
+        debug_assert!((i as usize) < self.stack.len());
+        unsafe {
+            *self.stack.get_unchecked_mut(i as usize) = val;
+        }
+    }
+
     fn push(&mut self, x: u32) {
-        self.stack[self.sp] = x;
+        unsafe {
+            *self.stack.get_unchecked_mut(self.sp) = x;
+        }
         self.sp += 1;
     }
 
     fn pop(&mut self) -> u32 {
-        let x = self.stack[self.sp - 1];
+        let x = *unsafe { self.stack.get_unchecked(self.sp - 1) };
         self.sp -= 1;
         x
     }
 }
 
 impl<'c> Frame<'c> {
+    #[inline(never)]
     fn eval(&mut self) {
         loop {
             let opcode = unsafe { std::mem::transmute::<_, Opcode>(self.read_u8()) };
@@ -65,11 +87,12 @@ impl<'c> Frame<'c> {
                 Opcode::Let => {
                     let i = self.read_u8();
                     let val = self.pop();
-                    self.stack[i as usize] = val;
+                    self.set_var(i, val);
                 }
                 Opcode::Var => {
                     let i = self.read_u8();
-                    self.push(self.stack[i as usize]);
+                    let val = self.var(i);
+                    self.push(val);
                 }
                 Opcode::LessEq => {
                     let b = self.pop();

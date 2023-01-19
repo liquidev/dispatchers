@@ -23,25 +23,45 @@ struct Frame<'c> {
 
 impl<'c> Frame<'c> {
     fn read_u8(&mut self) -> u8 {
-        let x = self.bytecode[self.pc as usize];
+        debug_assert!((self.pc as usize) < self.bytecode.len());
+        let x = *unsafe { self.bytecode.get_unchecked(self.pc as usize) };
         self.pc += 1;
         x
     }
 
     fn peek_u8(&self) -> u8 {
-        self.bytecode[self.pc as usize]
+        debug_assert!((self.pc as usize) < self.bytecode.len());
+        *unsafe { self.bytecode.get_unchecked(self.pc as usize) }
     }
 
     fn read_u16(&mut self) -> u16 {
-        let x = unsafe { *std::mem::transmute::<_, &u16>(&self.bytecode[self.pc as usize]) };
+        debug_assert!((self.pc as usize + 1) < self.bytecode.len());
+        let x = unsafe {
+            *std::mem::transmute::<_, &u16>(self.bytecode.get_unchecked(self.pc as usize))
+        };
         self.pc += 2;
         u16::from_le(x)
     }
 
     fn read_u32(&mut self) -> u32 {
-        let x = unsafe { *std::mem::transmute::<_, &u32>(&self.bytecode[self.pc as usize]) };
+        debug_assert!((self.pc as usize + 3) < self.bytecode.len());
+        let x = unsafe {
+            *std::mem::transmute::<_, &u32>(self.bytecode.get_unchecked(self.pc as usize))
+        };
         self.pc += 4;
         u32::from_le(x)
+    }
+
+    fn var(&self, i: u8) -> u32 {
+        debug_assert!((i as usize) < self.variables.len());
+        unsafe { *self.variables.get_unchecked(i as usize) }
+    }
+
+    fn set_var(&mut self, i: u8, val: u32) {
+        debug_assert!((i as usize) < self.variables.len());
+        unsafe {
+            *self.variables.get_unchecked_mut(i as usize) = val;
+        }
     }
 }
 
@@ -59,7 +79,7 @@ static DISPATCH_TABLE: [fn(&mut Frame) -> u32; 8] = [
 impl<'c> Frame<'c> {
     fn step(&mut self) -> u32 {
         let opcode = self.read_u8();
-        DISPATCH_TABLE[opcode as usize](self)
+        unsafe { DISPATCH_TABLE.get_unchecked(opcode as usize)(self) }
     }
 
     fn eval(&mut self) {
@@ -74,13 +94,14 @@ fn exec_int(frame: &mut Frame) -> u32 {
 }
 
 fn exec_var(frame: &mut Frame) -> u32 {
-    frame.variables[frame.read_u8() as usize]
+    let i = frame.read_u8();
+    frame.var(i)
 }
 
 fn exec_let(frame: &mut Frame) -> u32 {
     let i = frame.read_u8();
     let val = frame.step();
-    frame.variables[i as usize] = val;
+    frame.set_var(i, val);
     val
 }
 
