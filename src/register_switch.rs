@@ -20,25 +20,45 @@ struct Frame<'c> {
 
 impl<'c> Frame<'c> {
     fn read_u8(&mut self) -> u8 {
-        let x = self.bytecode[self.pc as usize];
+        debug_assert!((self.pc as usize) < self.bytecode.len());
+        let x = *unsafe { self.bytecode.get_unchecked(self.pc as usize) };
         self.pc += 1;
         x
     }
 
     fn read_u16(&mut self) -> u16 {
-        let x = unsafe { *std::mem::transmute::<_, &u16>(&self.bytecode[self.pc as usize]) };
+        debug_assert!((self.pc as usize + 1) < self.bytecode.len());
+        let x = unsafe {
+            *std::mem::transmute::<_, &u16>(self.bytecode.get_unchecked(self.pc as usize))
+        };
         self.pc += 2;
         u16::from_le(x)
     }
 
     fn read_u32(&mut self) -> u32 {
-        let x = unsafe { *std::mem::transmute::<_, &u32>(&self.bytecode[self.pc as usize]) };
+        debug_assert!((self.pc as usize + 3) < self.bytecode.len());
+        let x = unsafe {
+            *std::mem::transmute::<_, &u32>(self.bytecode.get_unchecked(self.pc as usize))
+        };
         self.pc += 4;
         u32::from_le(x)
+    }
+
+    fn var(&self, i: u8) -> u32 {
+        debug_assert!((i as usize) < self.variables.len());
+        unsafe { *self.variables.get_unchecked(i as usize) }
+    }
+
+    fn set_var(&mut self, i: u8, val: u32) {
+        debug_assert!((i as usize) < self.variables.len());
+        unsafe {
+            *self.variables.get_unchecked_mut(i as usize) = val;
+        }
     }
 }
 
 impl<'c> Frame<'c> {
+    #[inline(never)]
     fn eval(&mut self) {
         loop {
             let opcode = unsafe { std::mem::transmute::<_, Opcode>(self.read_u8()) };
@@ -46,30 +66,40 @@ impl<'c> Frame<'c> {
                 Opcode::Int => {
                     let target = self.read_u8();
                     let i = self.read_u32();
-                    self.variables[target as usize] = i;
+                    self.set_var(target, i);
+                    self.dump();
                 }
                 Opcode::LessEq => {
-                    let a = self.variables[self.read_u8() as usize];
-                    let b = self.variables[self.read_u8() as usize];
+                    let ra = self.read_u8();
+                    let rb = self.read_u8();
+                    let a = self.var(ra);
+                    let b = self.var(rb);
                     let target = self.read_u8();
-                    self.variables[target as usize] = (a <= b) as u32;
+                    self.set_var(target, (a <= b) as u32);
+                    self.dump();
                 }
                 Opcode::Add => {
-                    let a = self.variables[self.read_u8() as usize];
-                    let b = self.variables[self.read_u8() as usize];
+                    let ra = self.read_u8();
+                    let rb = self.read_u8();
+                    let a = self.var(ra);
+                    let b = self.var(rb);
                     let target = self.read_u8();
-                    self.variables[target as usize] = a + b;
+                    self.set_var(target, a + b);
+                    self.dump();
                 }
                 Opcode::Multiply => {
-                    let a = self.variables[self.read_u8() as usize];
-                    let b = self.variables[self.read_u8() as usize];
+                    let ra = self.read_u8();
+                    let rb = self.read_u8();
+                    let a = self.var(ra);
+                    let b = self.var(rb);
                     let target = self.read_u8();
-                    self.variables[target as usize] = a * b;
+                    self.set_var(target, a * b);
+                    self.dump();
                 }
                 Opcode::JumpIfNot => {
                     let offset = self.read_u16();
                     let source = self.read_u8();
-                    let condition = self.variables[source as usize];
+                    let condition = self.var(source);
                     if condition == 0 {
                         self.pc = offset;
                     }
